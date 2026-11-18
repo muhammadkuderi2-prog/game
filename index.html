@@ -138,17 +138,18 @@
     <!-- SCRIPT UTAMA -->
     <script>
         let db = null;
-        try {
-            const firebaseConfig = {
-                databaseURL: "https://naruto-guess-game-default-rtdb.firebaseio.com/"
-            };
-            if (!firebase.apps.length) {
-                firebase.initializeApp(firebaseConfig);
-            }
-            db = firebase.database();
-        } catch (e) {
-            alert("Gagal terhubung ke server cloud. Periksa koneksi internet.");
-        }
+try {
+    const firebaseConfig = {
+        // Ganti URL di bawah ini dengan URL Database Firebase milikmu sendiri yang baru saja disalin!
+        databaseURL: "https://console.firebase.google.com/project/game-naruto-15fbc/database/game-naruto-15fbc-default-rtdb/data/~2F"
+    };
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+    db = firebase.database();
+} catch (e) {
+    alert("Gagal terhubung ke server cloud.");
+}
 
         const narutoCharacters = [
             "Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake", "Sai", "Yamato", "Shikamaru Nara", 
