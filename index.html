@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naruto Guess Online - Final Version</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Poppins:wght@400;600;700&display=swap');
+        .font-ninja { font-family: 'Permanent Marker', cursive; }
+        body { font-family: 'Poppins', sans-serif; background-color: #0f172a; color: #f8fafc; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-4">
+
+    <!-- HEADER -->
+    <header class="w-full max-w-md text-center py-4">
+        <h1 class="font-ninja text-3xl text-orange-500 tracking-wider drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">NARUTO GUESS GAME</h1>
+        <p class="text-xs text-slate-400">Multiplayer Cepat & Stabil</p>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col justify-center">
+        
+        <!-- VIEW 1: LOBBY UTAMA -->
+        <div id="view-lobby" class="space-y-4">
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-orange-400">Nama Kamu:</label>
+                <input type="text" id="input-name" placeholder="Contoh: habi" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:outline-none focus:border-orange-500 text-white font-medium">
+            </div>
+
+            <div class="pt-2 grid grid-cols-2 gap-3">
+                <button onclick="goToConfig()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-orange-600/30">
+                    Buat Room
+                </button>
+                <button onclick="goToJoin()" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-orange-400 font-bold py-3 px-4 rounded-xl transition">
+                    Gabung Room
+                </button>
+            </div>
+        </div>
+
+        <!-- VIEW 1.5: CONFIG ROOM (HOST) -->
+        <div id="view-config" class="space-y-4 hidden">
+            <h3 class="text-sm font-semibold text-orange-400">Pengaturan Room Baru:</h3>
+            <div class="space-y-2">
+                <label class="block text-xs text-slate-400">Pilih Maksimal Total Pemain:</label>
+                <select id="select-max-players" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white font-medium">
+                    <option value="2">2 Pemain</option>
+                    <option value="3">3 Pemain</option>
+                    <option value="4" selected>4 Pemain</option>
+                    <option value="5">5 Pemain</option>
+                    <option value="6">6 Pemain</option>
+                    <option value="7">7 Pemain</option>
+                    <option value="8">8 Pemain</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2">
+                <button onclick="createRoomNow()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition">Buat Sekarang</button>
+                <button onclick="switchView('view-lobby')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition">Kembali</button>
+            </div>
+        </div>
+
+        <!-- VIEW 1.8: JOIN ROOM FORM -->
+        <div id="view-join" class="space-y-4 hidden">
+            <div class="space-y-2">
+                <label class="block text-sm font-semibold text-orange-400">Kode Room (Contoh: NARU88):</label>
+                <input type="text" id="input-room-code" placeholder="Masukkan Kode Room" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white uppercase font-bold tracking-widest text-center">
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2">
+                <button onclick="joinRoomNow()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition">Masuk Room</button>
+                <button onclick="switchView('view-lobby')" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition">Kembali</button>
+            </div>
+        </div>
+
+        <!-- VIEW 2: WAITING ROOM -->
+        <div id="view-room" class="space-y-4 hidden">
+            <div class="bg-slate-800/60 p-4 rounded-xl border border-slate-700/50 flex justify-between items-center">
+                <div>
+                    <span class="text-xs text-slate-400 block">KODE ROOM</span>
+                    <span id="display-room-code" class="text-2xl font-black text-orange-400 tracking-wider">----</span>
+                </div>
+                <button onclick="copyCode()" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-xs font-semibold">Salin</button>
+            </div>
+
+            <div>
+                <h3 class="text-sm font-semibold text-slate-300 mb-2">Daftar Anggota Room (<span id="player-count">0</span>):</h3>
+                <ul id="waiting-player-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    <!-- Terisi dinamis -->
+                </ul>
+            </div>
+
+            <!-- Kontrol Host -->
+            <div id="host-start-box" class="pt-2 hidden">
+                <button onclick="hostTriggerStart()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-green-600/30 transition animate-pulse">
+                    Mulai Permainan! 🚀
+                </button>
+            </div>
+            <div id="guest-wait-box" class="text-center py-3 text-slate-400 text-sm italic">
+                Menunggu Host memulai permainan... ⏳
+            </div>
+        </div>
+
+        <!-- VIEW 3: PLAYING ARENA -->
+        <div id="view-play" class="space-y-4 hidden">
+            <div class="flex justify-between items-center text-xs text-slate-400 border-b border-slate-800 pb-2">
+                <span>Waktu: <strong id="timer" class="text-orange-400 text-sm">90</strong>s</span>
+                <span class="text-orange-500 font-bold">GAME BERLANGSUNG</span>
+            </div>
+
+            <div class="text-center py-3 bg-slate-800/40 rounded-xl border border-slate-800">
+                <p class="text-xs text-slate-400 uppercase tracking-widest mb-1">Status Kamu:</p>
+                <p class="text-sm font-bold text-orange-400">❓ Karaktermu Dirahasiakan</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Minta temanmu memberikan petunjuk!</p>
+            </div>
+
+            <div>
+                <h4 class="text-xs font-semibold text-slate-400 mb-2">Daftar Karakter Teman:</h4>
+                <div id="play-player-board" class="space-y-2 max-h-60 overflow-y-auto pr-1 text-sm">
+                    <!-- Terisi otomatis -->
+                </div>
+            </div>
+
+            <button id="btn-back-lobby" onclick="hostResetGame()" class="w-full bg-red-600/80 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-sm transition mt-2 hidden">
+                Selesaikan Game (Kembali ke Waiting Room)
+            </button>
+        </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="w-full max-w-md text-center py-2 text-[10px] text-slate-500">
+        Naruto Guess Game • Sestem Super Stabil
+    </footer>
+
+    <!-- SCRIPT UTAMA -->
+    <script>
+        const narutoCharacters = [
+            "Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake", "Sai", "Yamato", "Shikamaru Nara", 
+            "Choji Akimichi", "Ino Yamanaka", "Rock Lee", "Neji Hyuga", "Tenten", "Hinata Hyuga", "Kiba Inuzuka", 
+            "Shino Aburame", "Asuma Sarutobi", "Kurenai Yuhi", "Guy (Maito Gai)", "Minato Namikaze", "Kushina Uzumaki", 
+            "Jiraiya", "Tsunade", "Orochimaru", "Hiruzen Sarutobi", "Hashirama Senju", "Tobirama Senju", "Danzo Shimura", 
+            "Shisui Uchiha", "Itachi Uchiha", "Fugaku Uchiha", "Mikoto Uchiha", "Iruka Umino", "Konohamaru Sarutobi", 
+            "Shizune", "Gaara", "Kankuro", "Temari", "Chiyo", "Killer Bee", "A (Raikage)", "Darui", "Mei Terumi", 
+            "Chojuro", "Onoki", "Pain / Nagato", "Konan", "Obito Uchiha", "Zetsu", "Kisame Hoshigaki", "Sasori", 
+            "Deidara", "Hidan", "Kakuzu", "Madara Uchiha", "Kabuto Yakushi", "Kimimaro", "Haku", "Zabuza Momochi", 
+            "Anko Mitarashi", "Akamaru", "Gamabunta", "Manda", "Katsuyu", "Rin Nohara", "Teuchi (Ramen)"
+        ];
+
+        let gameData = {
+            roomCode: "",
+            isHost: false,
+            myName: "",
+            maxPlayers: 4,
+            players: [],
+            status: "waiting"
+        };
+
+        let timerInterval = null;
+        let channel = null;
+
+        window.onload = function() {
+            const savedName = localStorage.getItem('naruto_player_name');
+            if (savedName) {
+                document.getElementById('input-name').value = savedName;
+            }
+            setupBroadcastChannel();
+        };
+
+        function setupBroadcastChannel() {
+            if (window.BroadcastChannel) {
+                channel = new BroadcastChannel('naruto_guess_room_channel');
+                channel.onmessage = (event) => {
+                    let msg = event.data;
+                    if (msg.roomCode === gameData.roomCode) {
+                        gameData.players = msg.players;
+                        gameData.status = msg.status;
+                        gameData.maxPlayers = msg.maxPlayers;
+                        
+                        if (gameData.status === 'waiting') {
+                            renderWaitingRoom();
+                            if (!document.getElementById('view-play').classList.contains('hidden')) {
+                                switchView('view-room');
+                            }
+                        } else if (gameData.status === 'playing') {
+                            renderPlayBoard(msg);
+                            if (document.getElementById('view-play').classList.contains('hidden')) {
+                                switchView('view-play');
+                            }
+                        }
+                    }
+                };
+            }
+        }
+
+        function broadcastState() {
+            if (channel) {
+                channel.postMessage(gameData);
+            }
+            localStorage.setItem('room_' + gameData.roomCode, JSON.stringify(gameData));
+        }
+
+        function switchView(viewId) {
+            ['view-lobby', 'view-config', 'view-join', 'view-room', 'view-play'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
+            const target = document.getElementById(viewId);
+            if (target) target.classList.remove('hidden');
+        }
+
+        function goToConfig() {
+            const name = document.getElementById('input-name').value.trim();
+            if (!name) {
+                alert("Masukkan nama kamu terlebih dahulu!");
+                return;
+            }
+            localStorage.setItem('naruto_player_name', name);
+            switchView('view-config');
+        }
+
+        function goToJoin() {
+            const name = document.getElementById('input-name').value.trim();
+            if (!name) {
+                alert("Masukkan nama kamu terlebih dahulu!");
+                return;
+            }
+            localStorage.setItem('naruto_player_name', name);
+            switchView('view-join');
+        }
+
+        function createRoomNow() {
+            const name = document.getElementById('input-name').value.trim();
+            const maxP = parseInt(document.getElementById('select-max-players').value);
+
+            if (!name) {
+                alert("Nama tidak boleh kosong!");
+                switchView('view-lobby');
+                return;
+            }
+
+            gameData.myName = name;
+            gameData.isHost = true;
+            gameData.maxPlayers = maxP;
+            gameData.roomCode = "NARU" + Math.floor(100 + Math.random() * 900);
+            gameData.status = "waiting";
+            gameData.players = [{ name: name, role: "Host" }];
+
+            broadcastState();
+            renderWaitingRoom();
+            switchView('view-room');
+        }
+
+        function joinRoomNow() {
+            const name = document.getElementById('input-name').value.trim();
+            const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+
+            if (!name) {
+                alert("Nama tidak boleh kosong!");
+                switchView('view-lobby');
+                return;
+            }
+            if (!code) {
+                alert("Masukkan kode room!");
+                return;
+            }
+
+            let savedString = localStorage.getItem('room_' + code);
+            if (!savedString) {
+                alert("Room dengan kode '" + code + "' tidak ditemukan! Pastikan kodenya benar.");
+                return;
+            }
+
+            let roomState = JSON.parse(savedString);
+            if (roomState.status !== 'waiting') {
+                alert("Permainan di room ini sudah dimulai!");
+                return;
+            }
+            if (roomState.players.length >= roomState.maxPlayers) {
+                alert("Room sudah penuh!");
+                return;
+            }
+
+            let existing = roomState.players.find(p => p.name === name);
+            if (!existing) {
+                roomState.players.push({ name: name, role: "Pemain" });
+                localStorage.setItem('room_' + code, JSON.stringify(roomState));
+            }
+
+            gameData.myName = name;
+            gameData.isHost = false;
+            gameData.roomCode = code;
+            gameData.maxPlayers = roomState.maxPlayers;
+            gameData.players = roomState.players;
+            gameData.status = roomState.status;
+
+            broadcastState();
+            renderWaitingRoom();
+            switchView('view-room');
+        }
+
+        function renderWaitingRoom() {
+            document.getElementById('display-room-code').innerText = gameData.roomCode;
+            document.getElementById('player-count').innerText = `${gameData.players.length}/${gameData.maxPlayers}`;
+
+            const listEl = document.getElementById('waiting-player-list');
+            listEl.innerHTML = '';
+
+            gameData.players.forEach((p, idx) => {
+                const li = document.createElement('li');
+                li.className = "bg-slate-800 px-3 py-2.5 rounded-xl text-sm flex justify-between items-center border border-slate-700/50";
+                li.innerHTML = `<span>👤 ${p.name}</span> <span class="text-xs ${idx === 0 ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-700 text-slate-300'} px-2 py-0.5 rounded">${idx === 0 ? 'Host' : 'Pemain'}</span>`;
+                listEl.appendChild(li);
+            });
+
+            if (gameData.isHost) {
+                document.getElementById('host-start-box').classList.remove('hidden');
+                document.getElementById('guest-wait-box').classList.add('hidden');
+            } else {
+                document.getElementById('host-start-box').classList.add('hidden');
+                document.getElementById('guest-wait-box').classList.remove('hidden');
+            }
+        }
+
+        function hostTriggerStart() {
+            let shuffled = [...narutoCharacters].sort(() => 0.5 - Math.random());
+            gameData.players.forEach((p, idx) => {
+                p.character = shuffled[idx % shuffled.length];
+            });
+            gameData.status = "playing";
+            broadcastState();
+        }
+
+        function renderPlayBoard(remoteData) {
+            switchView('view-play');
+            const boardEl = document.getElementById('play-player-board');
+            boardEl.innerHTML = '';
+
+            let playersList = remoteData.players || [];
+            playersList.forEach((p) => {
+                const div = document.createElement('div');
+                if (p.name === gameData.myName) {
+                    div.className = "bg-slate-950 px-3 py-3 rounded-xl flex justify-between items-center border border-orange-500/30";
+                    div.innerHTML = `<span class="font-semibold text-orange-300">👤 ${p.name} (Kamu)</span> <span class="bg-slate-800 text-slate-500 px-3 py-1 rounded-lg text-xs italic">??? (Rahasia)</span>`;
+                } else {
+                    div.className = "bg-slate-800/80 px-3 py-3 rounded-xl flex justify-between items-center border border-slate-700/50";
+                    div.innerHTML = `<span class="font-semibold text-slate-200">👤 ${p.name}</span> <span class="bg-orange-500/20 text-orange-400 px-3 py-1 rounded-lg font-bold text-xs tracking-wide">${p.character || 'Menunggu...'}</span>`;
+                }
+                boardEl.appendChild(div);
+            });
+
+            if (gameData.isHost) {
+                document.getElementById('btn-back-lobby').classList.remove('hidden');
+            } else {
+                document.getElementById('btn-back-lobby').classList.add('hidden');
+            }
+
+            if (!timerInterval) {
+                let timeLeft = 90;
+                document.getElementById('timer').innerText = timeLeft;
+                timerInterval = setInterval(() => {
+                    timeLeft--;
+                    document.getElementById('timer').innerText = timeLeft;
+                    if (timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                        if (gameData.isHost) hostResetGame();
+                    }
+                }, 1000);
+            }
+        }
+
+        function hostResetGame() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
+            gameData.status = "waiting";
+            broadcastState();
+        }
+
+        function copyCode() {
+            navigator.clipboard.writeText(gameData.roomCode);
+            alert("Kode room disalin: " + gameData.roomCode);
+        }
+    </script>
+</body>
+</html>
