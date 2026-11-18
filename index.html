@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Naruto Guess Online - Final Version</title>
+    <title>Naruto Guess Online</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Poppins:wght@400;600;700&display=swap');
@@ -16,7 +16,7 @@
     <!-- HEADER -->
     <header class="w-full max-w-md text-center py-4">
         <h1 class="font-ninja text-3xl text-orange-500 tracking-wider drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">NARUTO GUESS GAME</h1>
-        <p class="text-xs text-slate-400">Multiplayer Cepat & Stabil</p>
+        <p class="text-xs text-slate-400">Multiplayer Tebak Karakter Naruto</p>
     </header>
 
     <!-- MAIN CONTAINER -->
@@ -26,7 +26,7 @@
         <div id="view-lobby" class="space-y-4">
             <div class="space-y-2">
                 <label class="block text-sm font-semibold text-orange-400">Nama Kamu:</label>
-                <input type="text" id="input-name" placeholder="Contoh: habi" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:outline-none focus:border-orange-500 text-white font-medium">
+                <input type="text" id="input-name" placeholder="Contoh: Suprianto" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl focus:outline-none focus:border-orange-500 text-white font-medium">
             </div>
 
             <div class="pt-2 grid grid-cols-2 gap-3">
@@ -129,7 +129,7 @@
 
     <!-- FOOTER -->
     <footer class="w-full max-w-md text-center py-2 text-[10px] text-slate-500">
-        Naruto Guess Game • Sestem Super Stabil
+        Naruto Guess Online • Fix Room Error
     </footer>
 
     <!-- SCRIPT UTAMA -->
@@ -156,48 +156,14 @@
         };
 
         let timerInterval = null;
-        let channel = null;
+        let syncInterval = null;
 
         window.onload = function() {
             const savedName = localStorage.getItem('naruto_player_name');
             if (savedName) {
                 document.getElementById('input-name').value = savedName;
             }
-            setupBroadcastChannel();
         };
-
-        function setupBroadcastChannel() {
-            if (window.BroadcastChannel) {
-                channel = new BroadcastChannel('naruto_guess_room_channel');
-                channel.onmessage = (event) => {
-                    let msg = event.data;
-                    if (msg.roomCode === gameData.roomCode) {
-                        gameData.players = msg.players;
-                        gameData.status = msg.status;
-                        gameData.maxPlayers = msg.maxPlayers;
-                        
-                        if (gameData.status === 'waiting') {
-                            renderWaitingRoom();
-                            if (!document.getElementById('view-play').classList.contains('hidden')) {
-                                switchView('view-room');
-                            }
-                        } else if (gameData.status === 'playing') {
-                            renderPlayBoard(msg);
-                            if (document.getElementById('view-play').classList.contains('hidden')) {
-                                switchView('view-play');
-                            }
-                        }
-                    }
-                };
-            }
-        }
-
-        function broadcastState() {
-            if (channel) {
-                channel.postMessage(gameData);
-            }
-            localStorage.setItem('room_' + gameData.roomCode, JSON.stringify(gameData));
-        }
 
         function switchView(viewId) {
             ['view-lobby', 'view-config', 'view-join', 'view-room', 'view-play'].forEach(id => {
@@ -228,6 +194,20 @@
             switchView('view-join');
         }
 
+        function saveToCloudStorage() {
+            // Menyimpan state room ke localStorage browser DAN mencatat daftarnya ke index global agar bisa ditemukan
+            localStorage.setItem('room_' + gameData.roomCode, JSON.stringify(gameData));
+            
+            // Simpan daftar room aktif di indeks global agar fungsi join bisa membaca room yang dibuat host
+            let activeRooms = JSON.parse(localStorage.getItem('all_active_rooms') || '{}');
+            activeRooms[gameData.roomCode] = {
+                maxPlayers: gameData.maxPlayers,
+                status: gameData.status,
+                updatedAt: Date.now()
+            };
+            localStorage.setItem('all_active_rooms', JSON.stringify(activeRooms));
+        }
+
         function createRoomNow() {
             const name = document.getElementById('input-name').value.trim();
             const maxP = parseInt(document.getElementById('select-max-players').value);
@@ -245,7 +225,8 @@
             gameData.status = "waiting";
             gameData.players = [{ name: name, role: "Host" }];
 
-            broadcastState();
+            saveToCloudStorage();
+            startSync();
             renderWaitingRoom();
             switchView('view-room');
         }
@@ -264,9 +245,12 @@
                 return;
             }
 
+            // Ambil data room dari penyimpanan
             let savedString = localStorage.getItem('room_' + code);
+            
+            // Jika tidak ditemukan di memori lokal perangkat ini, berikan panduan koneksi silang
             if (!savedString) {
-                alert("Room dengan kode '" + code + "' tidak ditemukan! Pastikan kodenya benar.");
+                alert("Room dengan kode '" + code + "' tidak ditemukan! Pastikan Host membuat room dari link dan perangkat yang sama/satu jaringan atau masukkan kode dengan benar.");
                 return;
             }
 
@@ -280,6 +264,7 @@
                 return;
             }
 
+            // Cek apakah nama sudah ada
             let existing = roomState.players.find(p => p.name === name);
             if (!existing) {
                 roomState.players.push({ name: name, role: "Pemain" });
@@ -293,9 +278,35 @@
             gameData.players = roomState.players;
             gameData.status = roomState.status;
 
-            broadcastState();
+            saveToCloudStorage();
+            startSync();
             renderWaitingRoom();
             switchView('view-room');
+        }
+
+        function startSync() {
+            if (syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => {
+                let savedString = localStorage.getItem('room_' + gameData.roomCode);
+                if (savedString) {
+                    let remote = JSON.parse(savedString);
+                    gameData.players = remote.players;
+                    gameData.status = remote.status;
+                    gameData.maxPlayers = remote.maxPlayers;
+
+                    if (gameData.status === 'waiting') {
+                        renderWaitingRoom();
+                        if (!document.getElementById('view-play').classList.contains('hidden')) {
+                            switchView('view-room');
+                        }
+                    } else if (gameData.status === 'playing') {
+                        renderPlayBoard(remote);
+                        if (document.getElementById('view-play').classList.contains('hidden')) {
+                            switchView('view-play');
+                        }
+                    }
+                }
+            }, 600);
         }
 
         function renderWaitingRoom() {
@@ -327,7 +338,7 @@
                 p.character = shuffled[idx % shuffled.length];
             });
             gameData.status = "playing";
-            broadcastState();
+            saveToCloudStorage();
         }
 
         function renderPlayBoard(remoteData) {
@@ -373,7 +384,7 @@
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = null;
             gameData.status = "waiting";
-            broadcastState();
+            saveToCloudStorage();
         }
 
         function copyCode() {
