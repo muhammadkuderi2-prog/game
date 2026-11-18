@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Naruto Guess Online</title>
+    <title>Naruto Guess Online - APK Version</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK V9 Compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Poppins:wght@400;600;700&display=swap');
         .font-ninja { font-family: 'Permanent Marker', cursive; }
@@ -16,7 +19,7 @@
     <!-- HEADER -->
     <header class="w-full max-w-md text-center py-4">
         <h1 class="font-ninja text-3xl text-orange-500 tracking-wider drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">NARUTO GUESS GAME</h1>
-        <p class="text-xs text-slate-400">Multiplayer Tebak Karakter Naruto</p>
+        <p class="text-xs text-slate-400">Multiplayer Online Antar HP</p>
     </header>
 
     <!-- MAIN CONTAINER -->
@@ -63,8 +66,8 @@
         <!-- VIEW 1.8: JOIN ROOM FORM -->
         <div id="view-join" class="space-y-4 hidden">
             <div class="space-y-2">
-                <label class="block text-sm font-semibold text-orange-400">Kode Room (Contoh: NARU88):</label>
-                <input type="text" id="input-room-code" placeholder="Masukkan Kode Room" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white uppercase font-bold tracking-widest text-center">
+                <label class="block text-sm font-semibold text-orange-400">Kode Room (4 Karakter):</label>
+                <input type="text" id="input-room-code" placeholder="Contoh: AB12" class="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white uppercase font-bold tracking-widest text-center">
             </div>
             <div class="grid grid-cols-2 gap-3 pt-2">
                 <button onclick="joinRoomNow()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition">Masuk Room</button>
@@ -129,11 +132,24 @@
 
     <!-- FOOTER -->
     <footer class="w-full max-w-md text-center py-2 text-[10px] text-slate-500">
-        Naruto Guess Online • Fix Room Error
+        Naruto Online Multiplayer • Free Cloud Sync
     </footer>
 
     <!-- SCRIPT UTAMA -->
     <script>
+        let db = null;
+        try {
+            const firebaseConfig = {
+                databaseURL: "https://naruto-guess-game-default-rtdb.firebaseio.com/"
+            };
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.database();
+        } catch (e) {
+            alert("Gagal terhubung ke server cloud. Periksa koneksi internet.");
+        }
+
         const narutoCharacters = [
             "Naruto Uzumaki", "Sasuke Uchiha", "Sakura Haruno", "Kakashi Hatake", "Sai", "Yamato", "Shikamaru Nara", 
             "Choji Akimichi", "Ino Yamanaka", "Rock Lee", "Neji Hyuga", "Tenten", "Hinata Hyuga", "Kiba Inuzuka", 
@@ -146,17 +162,12 @@
             "Anko Mitarashi", "Akamaru", "Gamabunta", "Manda", "Katsuyu", "Rin Nohara", "Teuchi (Ramen)"
         ];
 
-        let gameData = {
-            roomCode: "",
-            isHost: false,
-            myName: "",
-            maxPlayers: 4,
-            players: [],
-            status: "waiting"
-        };
-
+        let myName = "";
+        let roomCode = "";
+        let isHost = false;
+        let myPlayerId = "";
+        let roomRef = null;
         let timerInterval = null;
-        let syncInterval = null;
 
         window.onload = function() {
             const savedName = localStorage.getItem('naruto_player_name');
@@ -175,191 +186,187 @@
         }
 
         function goToConfig() {
-            const name = document.getElementById('input-name').value.trim();
-            if (!name) {
+            myName = document.getElementById('input-name').value.trim();
+            if (!myName) {
                 alert("Masukkan nama kamu terlebih dahulu!");
                 return;
             }
-            localStorage.setItem('naruto_player_name', name);
+            localStorage.setItem('naruto_player_name', myName);
             switchView('view-config');
         }
 
         function goToJoin() {
-            const name = document.getElementById('input-name').value.trim();
-            if (!name) {
+            myName = document.getElementById('input-name').value.trim();
+            if (!myName) {
                 alert("Masukkan nama kamu terlebih dahulu!");
                 return;
             }
-            localStorage.setItem('naruto_player_name', name);
+            localStorage.setItem('naruto_player_name', myName);
             switchView('view-join');
         }
 
-        function saveToCloudStorage() {
-            // Menyimpan state room ke localStorage browser DAN mencatat daftarnya ke index global agar bisa ditemukan
-            localStorage.setItem('room_' + gameData.roomCode, JSON.stringify(gameData));
-            
-            // Simpan daftar room aktif di indeks global agar fungsi join bisa membaca room yang dibuat host
-            let activeRooms = JSON.parse(localStorage.getItem('all_active_rooms') || '{}');
-            activeRooms[gameData.roomCode] = {
-                maxPlayers: gameData.maxPlayers,
-                status: gameData.status,
-                updatedAt: Date.now()
-            };
-            localStorage.setItem('all_active_rooms', JSON.stringify(activeRooms));
+        function generateRoomCode() {
+            return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
 
         function createRoomNow() {
-            const name = document.getElementById('input-name').value.trim();
-            const maxP = parseInt(document.getElementById('select-max-players').value);
+            if (!db) { alert("Database belum siap!"); return; }
 
-            if (!name) {
+            myName = document.getElementById('input-name').value.trim();
+            if (!myName) {
                 alert("Nama tidak boleh kosong!");
                 switchView('view-lobby');
                 return;
             }
 
-            gameData.myName = name;
-            gameData.isHost = true;
-            gameData.maxPlayers = maxP;
-            gameData.roomCode = "NARU" + Math.floor(100 + Math.random() * 900);
-            gameData.status = "waiting";
-            gameData.players = [{ name: name, role: "Host" }];
+            roomCode = generateRoomCode();
+            isHost = true;
+            myPlayerId = 'p_' + Math.random().toString(36).substring(2, 8);
+            const maxP = parseInt(document.getElementById('select-max-players').value);
 
-            saveToCloudStorage();
-            startSync();
-            renderWaitingRoom();
-            switchView('view-room');
+            roomRef = db.ref('rooms/' + roomCode);
+
+            const initialData = {
+                host: myPlayerId,
+                maxPlayers: maxP,
+                status: 'waiting',
+                players: {
+                    [myPlayerId]: { name: myName, character: "" }
+                }
+            };
+
+            roomRef.set(initialData).then(() => {
+                switchView('view-room');
+                listenToRoom();
+            }).catch(err => alert("Gagal membuat room: " + err.message));
         }
 
         function joinRoomNow() {
-            const name = document.getElementById('input-name').value.trim();
-            const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+            if (!db) { alert("Database belum siap!"); return; }
 
-            if (!name) {
+            myName = document.getElementById('input-name').value.trim();
+            roomCode = document.getElementById('input-room-code').value.trim().toUpperCase();
+
+            if (!myName) {
                 alert("Nama tidak boleh kosong!");
                 switchView('view-lobby');
                 return;
             }
-            if (!code) {
+            if (!roomCode) {
                 alert("Masukkan kode room!");
                 return;
             }
 
-            // Ambil data room dari penyimpanan
-            let savedString = localStorage.getItem('room_' + code);
-            
-            // Jika tidak ditemukan di memori lokal perangkat ini, berikan panduan koneksi silang
-            if (!savedString) {
-                alert("Room dengan kode '" + code + "' tidak ditemukan! Pastikan Host membuat room dari link dan perangkat yang sama/satu jaringan atau masukkan kode dengan benar.");
-                return;
-            }
-
-            let roomState = JSON.parse(savedString);
-            if (roomState.status !== 'waiting') {
-                alert("Permainan di room ini sudah dimulai!");
-                return;
-            }
-            if (roomState.players.length >= roomState.maxPlayers) {
-                alert("Room sudah penuh!");
-                return;
-            }
-
-            // Cek apakah nama sudah ada
-            let existing = roomState.players.find(p => p.name === name);
-            if (!existing) {
-                roomState.players.push({ name: name, role: "Pemain" });
-                localStorage.setItem('room_' + code, JSON.stringify(roomState));
-            }
-
-            gameData.myName = name;
-            gameData.isHost = false;
-            gameData.roomCode = code;
-            gameData.maxPlayers = roomState.maxPlayers;
-            gameData.players = roomState.players;
-            gameData.status = roomState.status;
-
-            saveToCloudStorage();
-            startSync();
-            renderWaitingRoom();
-            switchView('view-room');
-        }
-
-        function startSync() {
-            if (syncInterval) clearInterval(syncInterval);
-            syncInterval = setInterval(() => {
-                let savedString = localStorage.getItem('room_' + gameData.roomCode);
-                if (savedString) {
-                    let remote = JSON.parse(savedString);
-                    gameData.players = remote.players;
-                    gameData.status = remote.status;
-                    gameData.maxPlayers = remote.maxPlayers;
-
-                    if (gameData.status === 'waiting') {
-                        renderWaitingRoom();
-                        if (!document.getElementById('view-play').classList.contains('hidden')) {
-                            switchView('view-room');
-                        }
-                    } else if (gameData.status === 'playing') {
-                        renderPlayBoard(remote);
-                        if (document.getElementById('view-play').classList.contains('hidden')) {
-                            switchView('view-play');
-                        }
-                    }
+            roomRef = db.ref('rooms/' + roomCode);
+            roomRef.once('value', snapshot => {
+                if (!snapshot.exists()) {
+                    alert("Room dengan kode '" + roomCode + "' tidak ditemukan di server!");
+                    return;
                 }
-            }, 600);
+
+                const data = snapshot.val();
+                const players = data.players || {};
+                const playerCount = Object.keys(players).length;
+
+                if (playerCount >= (data.maxPlayers || 8)) {
+                    alert("Room sudah penuh!");
+                    return;
+                }
+
+                if (data.status !== 'waiting') {
+                    alert("Permainan di room ini sudah dimulai!");
+                    return;
+                }
+
+                isHost = false;
+                myPlayerId = 'p_' + Math.random().toString(36).substring(2, 8);
+
+                db.ref(`rooms/${roomCode}/players/${myPlayerId}`).set({
+                    name: myName,
+                    character: ""
+                }).then(() => {
+                    switchView('view-room');
+                    listenToRoom();
+                }).catch(err => alert("Gagal bergabung ke room: " + err.message));
+            });
         }
 
-        function renderWaitingRoom() {
-            document.getElementById('display-room-code').innerText = gameData.roomCode;
-            document.getElementById('player-count').innerText = `${gameData.players.length}/${gameData.maxPlayers}`;
+        function listenToRoom() {
+            roomRef.on('value', snapshot => {
+                if (!snapshot.exists()) return;
+                const data = snapshot.val();
 
-            const listEl = document.getElementById('waiting-player-list');
-            listEl.innerHTML = '';
+                document.getElementById('display-room-code').innerText = roomCode;
+                const players = data.players || {};
+                const playerListEl = document.getElementById('waiting-player-list');
+                playerListEl.innerHTML = '';
 
-            gameData.players.forEach((p, idx) => {
-                const li = document.createElement('li');
-                li.className = "bg-slate-800 px-3 py-2.5 rounded-xl text-sm flex justify-between items-center border border-slate-700/50";
-                li.innerHTML = `<span>👤 ${p.name}</span> <span class="text-xs ${idx === 0 ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-700 text-slate-300'} px-2 py-0.5 rounded">${idx === 0 ? 'Host' : 'Pemain'}</span>`;
-                listEl.appendChild(li);
+                let count = 0;
+                for (let pid in players) {
+                    count++;
+                    const li = document.createElement('li');
+                    li.className = "bg-slate-800 px-3 py-2.5 rounded-xl text-sm flex justify-between items-center border border-slate-700/50";
+                    li.innerHTML = `<span>👤 ${players[pid].name}</span> ${pid === data.host ? '<span class="text-xs bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded">Host</span>' : '<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Pemain</span>'}`;
+                    playerListEl.appendChild(li);
+                }
+                document.getElementById('player-count').innerText = `${count}/${data.maxPlayers || 8}`;
+
+                if (data.host === myPlayerId) {
+                    isHost = true;
+                    document.getElementById('host-start-box').classList.remove('hidden');
+                    document.getElementById('guest-wait-box').classList.add('hidden');
+                } else {
+                    isHost = false;
+                    document.getElementById('host-start-box').classList.add('hidden');
+                    document.getElementById('guest-wait-box').classList.remove('hidden');
+                }
+
+                if (data.status === 'playing') {
+                    renderGameplay(data);
+                } else if (data.status === 'waiting' && !document.getElementById('view-play').classList.contains('hidden')) {
+                    switchView('view-room');
+                }
             });
-
-            if (gameData.isHost) {
-                document.getElementById('host-start-box').classList.remove('hidden');
-                document.getElementById('guest-wait-box').classList.add('hidden');
-            } else {
-                document.getElementById('host-start-box').classList.add('hidden');
-                document.getElementById('guest-wait-box').classList.remove('hidden');
-            }
         }
 
         function hostTriggerStart() {
-            let shuffled = [...narutoCharacters].sort(() => 0.5 - Math.random());
-            gameData.players.forEach((p, idx) => {
-                p.character = shuffled[idx % shuffled.length];
+            roomRef.once('value', snapshot => {
+                const data = snapshot.val();
+                const players = data.players || {};
+                const playerIds = Object.keys(players);
+
+                let shuffledChars = [...narutoCharacters].sort(() => 0.5 - Math.random());
+                let updates = {};
+
+                playerIds.forEach((pid, index) => {
+                    updates[`players/${pid}/character`] = shuffledChars[index % shuffledChars.length];
+                });
+
+                updates['status'] = 'playing';
+                roomRef.update(updates);
             });
-            gameData.status = "playing";
-            saveToCloudStorage();
         }
 
-        function renderPlayBoard(remoteData) {
+        function renderGameplay(data) {
             switchView('view-play');
+            const players = data.players || {};
+
             const boardEl = document.getElementById('play-player-board');
             boardEl.innerHTML = '';
 
-            let playersList = remoteData.players || [];
-            playersList.forEach((p) => {
+            for (let pid in players) {
                 const div = document.createElement('div');
-                if (p.name === gameData.myName) {
+                if (pid === myPlayerId) {
                     div.className = "bg-slate-950 px-3 py-3 rounded-xl flex justify-between items-center border border-orange-500/30";
-                    div.innerHTML = `<span class="font-semibold text-orange-300">👤 ${p.name} (Kamu)</span> <span class="bg-slate-800 text-slate-500 px-3 py-1 rounded-lg text-xs italic">??? (Rahasia)</span>`;
+                    div.innerHTML = `<span class="font-semibold text-orange-300">👤 ${players[pid].name} (Kamu)</span> <span class="bg-slate-800 text-slate-500 px-3 py-1 rounded-lg text-xs italic">??? (Rahasia)</span>`;
                 } else {
                     div.className = "bg-slate-800/80 px-3 py-3 rounded-xl flex justify-between items-center border border-slate-700/50";
-                    div.innerHTML = `<span class="font-semibold text-slate-200">👤 ${p.name}</span> <span class="bg-orange-500/20 text-orange-400 px-3 py-1 rounded-lg font-bold text-xs tracking-wide">${p.character || 'Menunggu...'}</span>`;
+                    div.innerHTML = `<span class="font-semibold text-slate-200">👤 ${players[pid].name}</span> <span class="bg-orange-500/20 text-orange-400 px-3 py-1 rounded-lg font-bold text-xs tracking-wide">${players[pid].character || 'Menunggu...'}</span>`;
                 }
                 boardEl.appendChild(div);
-            });
+            }
 
-            if (gameData.isHost) {
+            if (isHost) {
                 document.getElementById('btn-back-lobby').classList.remove('hidden');
             } else {
                 document.getElementById('btn-back-lobby').classList.add('hidden');
@@ -374,7 +381,7 @@
                     if (timeLeft <= 0) {
                         clearInterval(timerInterval);
                         timerInterval = null;
-                        if (gameData.isHost) hostResetGame();
+                        if (isHost) hostResetGame();
                     }
                 }, 1000);
             }
@@ -383,13 +390,14 @@
         function hostResetGame() {
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = null;
-            gameData.status = "waiting";
-            saveToCloudStorage();
+            if (isHost && roomRef) {
+                roomRef.update({ status: 'waiting' });
+            }
         }
 
         function copyCode() {
-            navigator.clipboard.writeText(gameData.roomCode);
-            alert("Kode room disalin: " + gameData.roomCode);
+            navigator.clipboard.writeText(roomCode);
+            alert("Kode room disalin: " + roomCode);
         }
     </script>
 </body>
